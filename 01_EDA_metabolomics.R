@@ -10,28 +10,34 @@ dfData = read.csv(file.choose(), header=T, stringsAsFactors = F)
 ## create matrix of covariates
 x = strsplit(dfData$Sample, ' ')
 fTreatment = rep(NA, times=nrow(dfData))
-fSampleID = rep(NA, times=nrow(dfData))
+fSubjectID = rep(NA, times=nrow(dfData))
 fTime = rep(NA, times=nrow(dfData))
 
 for (i in 1:length(x)){
   if (length(x[[i]]) > 2){
     fTreatment[i] = 'HC'
-    fSampleID[i] = x[[i]][2]
+    fSubjectID[i] = x[[i]][2]
     fTime[i] = x[[i]][3]
   } else {
     fTreatment[i] = 'Tr'
-    fSampleID[i] = x[[i]][1]T
+    fSubjectID[i] = x[[i]][1]
     fTime[i] = x[[i]][2]
   }
 }
 
-dfSample = data.frame(Code=dfData$Code, Sample=dfData$Sample, fSampleID, 
-                      fTreatment, fTime)
+## to avoid confusion shorten the names for subject IDs
+fSubjectID = gsub('TREAT', 'TR', fSubjectID)
+
+dfSample = data.frame(Code=dfData$Code, Sample=dfData$Sample, 
+                      fSubjectID=factor(fSubjectID), 
+                      fTreatment=factor(fTreatment), 
+                      fTime=factor(fTime, levels = c('BL', '12W', '36W', '60W')))
 
 mData = as.matrix(dfData[,-c(1,2)])
+rownames(mData) = dfSample$Code
 
 lData.train = list(data=mData, sample=dfSample)
-lData.train$sample$fTime = relevel(lData.train$sample$fTime, ref = 'BL')
+# lData.train$sample$fTime = relevel(lData.train$sample$fTime, ref = 'BL')
 iTime = rep(1, times=nrow(lData.train$sample))
 iTime[lData.train$sample$fTime == '12W'] = 12
 iTime[lData.train$sample$fTime == '36W'] = 36
@@ -43,7 +49,7 @@ rm(dfSample)
 #################################################################
 ### diagnostics on the data
 library(downloader)
-url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/master/CDiagnosticPlots.R'
+url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/experimental/CDiagnosticPlots.R'
 download(url, 'CDiagnosticPlots.R')
 
 # load the required packages
@@ -51,80 +57,118 @@ source('CDiagnosticPlots.R')
 # delete the file after source
 unlink('CDiagnosticPlots.R')
 
-# impute the average for missing zeros
-mData = lData.train$data
-mData = apply(mData, 2, function(x){
-  i = which(x == 0)
-  if (length(i) > 0){
-    x[i] = mean(x)
-  }
-  return(x)
-})
+table(lData.train$data == 0)
 
-rownames(mData) = as.character(lData.train$sample$Sample)
-oDiag = CDiagnosticPlots(t(log(mData)), 'log data')
+# how many zeros per metabolite
+z = apply(lData.train$data, 2, function(x) sum(x == 0))
+z[z > 0]
+hist(z[z > 0])
+z[z > 10]
+
+# how many zeros per sample
+z = apply(lData.train$data, 1, function(x) sum(x == 0))
+z[z > 0]
+hist(z[z > 0])
+z[z > 5]
+iZeros = z
+## do not impute on this analysis 
+# # impute the average for missing zeros
+# mData = lData.train$data
+# mData = apply(mData, 2, function(x){
+#   i = which(x == 0)
+#   if (length(i) > 0){
+#     x[i] = mean(x)
+#   }
+#   return(x)
+# })
+mData = log(lData.train$data+1)
+oDiag = CDiagnosticPlots(t(mData), 'log data')
 
 fBatch = lData.train$sample$fTreatment
-
+# fBatch = rep('Z', times=nrow(lData.train$sample))
+fBatch = cut(iZeros, breaks = c(0, 1, 2, 4, max(iZeros)), include.lowest = T)
+fBatch = lData.train$sample$fTime
+# fBatch[iZeros <= 3] = 'NZ'
+# fBatch = factor(fBatch)
+levels(fBatch)
+table(fBatch)
 boxplot.median.summary(oDiag, fBatch, axis.label.cex = 0.1)
 plot.mean.summary(oDiag, fBatch, axis.label.cex = 0.1)
 plot.sigma.summary(oDiag, fBatch, axis.label.cex = 0.1)
-# plot.missing.summary(oDiag, fBatch, axis.label.cex = 0.1, cex.main=1)
-plot.PCA(oDiag, fBatch, cex.main=1)
+plot.missing.summary(oDiag, fBatch, axis.label.cex = 0.1, cex.main=1)
+plot.PCA(oDiag, fBatch, cex.main=1, csLabels = '')
 plot.dendogram(oDiag, fBatch, labels_cex = 0.8, cex.main=0.7)
 ## change parameters 
 l = CDiagnosticPlotsGetParameters(oDiag)
 l$PCA.jitter = F
 l$HC.jitter = F
 oDiag = CDiagnosticPlotsSetParameters(oDiag, l)
-plot.PCA(oDiag, fBatch, legend.pos = 'bottomright', csLabels = lData.train$sample$fSampleID)
+plot.PCA(oDiag, fBatch, legend.pos = 'bottomright', csLabels = lData.train$sample$fSubjectID, labels.cex = 0.8)
 plot.dendogram(oDiag, fBatch, labels_cex = 0.7)
 plot.heatmap(oDiag)
+plot.PCA(oDiag, fBatch, legend.pos = 'bottomright', 
+         csLabels = lData.train$sample$fTreatment:lData.train$sample$fTime, labels.cex = 0.8)
+
 
 plot(oDiag@lData$PCA$sdev)
-####### xyplots of averages and individual metabolites
+####### some random plots
 library(lattice)
-df = data.frame(x = oDiag@lData$PCA$x[,1], 
-                lData.train$sample)
+df = data.frame(oDiag@lData$PCA$x[,1:2])
+df = stack(df)
+df = cbind(df, lData.train$sample)
 
-xyplot(x ~ iTime | fSampleID, data=df, type=(c('g', 'p', 'l')))
+xyplot(values ~ iTime | fSubjectID, data=df, groups=ind, auto.key = T, 
+       type=(c('g', 'p', 'l')))
 
-## make ~12 at a time
-# impute the average for missing zeros
-mData = lData.train$data
-mData = apply(mData, 2, function(x){
-  i = which(x == 0)
-  if (length(i) > 0){
-    x[i] = mean(x)
-  }
-  return(x)
-})
 
-iCut = cut(1:117, breaks = 10, include.lowest = T, labels = 1:10)
-dfCut = data.frame(iCut, x=1:117)
-tapply(dfCut$x, dfCut$iCut, function(x){
-  df = stack(data.frame(log(mData[,x])))
-  df = cbind(df, lData.train$sample)
-  print(xyplot(values ~ iTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
-               scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
-  )
-})
+bwplot(values ~ fTime | fTreatment, data=df, groups=ind, auto.key = T,
+       panel = panel.violin, type='b')
+       
+xyplot(values ~ fTime | fTreatment, data=df, groups=ind, auto.key = T,
+       type='p')
 
-## time as categorical
-tapply(dfCut$x, dfCut$iCut, function(x){
-  df = stack(data.frame(log(mData[,x])))
-  df = cbind(df, lData.train$sample)
-  print(xyplot(values ~ fTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
-               scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
-  )
-})
+
+dotplot(values ~ fTime | fTreatment, data=df, groups=df$ind,
+        panel=function(x, y, ...) panel.bwplot(x, y, pch='|',...), type='b',
+        par.strip.text=list(cex=0.7), scales=list(relation='free', x=list(cex=0.7), y=list(cex=0.7)))
+
+
+# ## make ~12 at a time
+# # impute the average for missing zeros
+# mData = lData.train$data
+# mData = apply(mData, 2, function(x){
+#   i = which(x == 0)
+#   if (length(i) > 0){
+#     x[i] = mean(x)
+#   }
+#   return(x)
+# })
+# 
+# iCut = cut(1:117, breaks = 10, include.lowest = T, labels = 1:10)
+# dfCut = data.frame(iCut, x=1:117)
+# tapply(dfCut$x, dfCut$iCut, function(x){
+#   df = stack(data.frame(log(mData[,x])))
+#   df = cbind(df, lData.train$sample)
+#   print(xyplot(values ~ iTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
+#                scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
+#   )
+# })
+# 
+# ## time as categorical
+# tapply(dfCut$x, dfCut$iCut, function(x){
+#   df = stack(data.frame(log(mData[,x])))
+#   df = cbind(df, lData.train$sample)
+#   print(xyplot(values ~ fTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
+#                scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
+#   )
+# })
 
 ######################################
 ###### merge the replicated samples i.e. technical replicates
 mData = lData.train$data
 dfSample = lData.train$sample
-fRep = dfSample$fSampleID:dfSample$fTime
-levels(fRep)
+fRep = dfSample$fSubjectID:dfSample$fTime
+nlevels(fRep)
 table(fRep)
 
 # combine the technical replicates
@@ -145,39 +189,69 @@ dim(mData)
 dfSample$fReplicates = droplevels(fRep)
 # get a shorter version of dfSample after adding technical replicates
 dfSample.2 = dfSample[sapply(m, function(x) return(x[1])), ]
-identical(rownames(mData), as.character(dfSample.2$fReplicates))
 dim(dfSample.2)
+identical(rownames(mData), as.character(dfSample.2$fReplicates))
 dfSample.2 = droplevels.data.frame(dfSample.2)
+rownames(mData) = as.character(dfSample.2$Code)
+rownames(dfSample.2) = as.character(dfSample.2$Code)
+identical(rownames(mData), rownames(dfSample.2))
 
 lData.train.sub = list(data=mData, sample=dfSample.2)
 
+rm(dfSample); rm(dfSample.2); rm(mData)
+
 ######### repeat the analysis done previously
-mData = lData.train.sub$data
+table(lData.train.sub$data == 0)
 
-## impute the missing data
-mData = apply(mData, 2, function(x){
-  i = which(x == 0)
-  if (length(i) > 0){
-    x[i] = mean(x)
-  }
-  return(x)
-})
+# how many zeros per metabolite
+z = apply(lData.train.sub$data, 2, function(x) sum(x == 0))
+z[z > 0]
+hist(z[z > 0])
+z[z > 3]
 
-rownames(mData) = as.character(lData.train.sub$sample$Sample)
-oDiag.2 = CDiagnosticPlots(t(log(mData)), 'log data imputed')
+# how many zeros per sample
+z = apply(lData.train.sub$data, 1, function(x) sum(x == 0))
+z[z > 0]
+hist(z[z > 0])
+z[z > 5]
+iZeros = z
 
-fBatch = lData.train.sub$sample$fTreatment
-
-boxplot.median.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-plot.mean.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-plot.sigma.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-## change parameters 
+mData = log(lData.train.sub$data+1)
+rownames(mData) = paste0(as.character(lData.train.sub$sample$fSubjectID), ':', 
+                         as.character(lData.train.sub$sample$fTime))
+# ## impute the missing data
+# mData = apply(mData, 2, function(x){
+#   i = which(x == 0)
+#   if (length(i) > 0){
+#     x[i] = mean(x)
+#   }
+#   return(x)
+# })
+# 
+# rownames(mData) = as.character(lData.train.sub$sample$Sample)
+oDiag.2 = CDiagnosticPlots(t(mData), 'log data merged')
 l = CDiagnosticPlotsGetParameters(oDiag.2)
 l$PCA.jitter = F
 l$HC.jitter = F
 oDiag.2 = CDiagnosticPlotsSetParameters(oDiag.2, l)
-plot.PCA(oDiag.2, fBatch, legend.pos = 'bottomright', csLabels = lData.train.sub$sample$fSampleID)
-plot.dendogram(oDiag.2, fBatch, labels_cex = 0.7)
+
+fBatch = lData.train.sub$sample$fTreatment
+
+fBatch = cut(iZeros, breaks = c(0, 1, 4, max(iZeros)), include.lowest = T)
+fBatch = lData.train$sample$fTime
+levels(fBatch)
+table(fBatch)
+
+boxplot.median.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+plot.mean.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+plot.sigma.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+plot.missing.summary(oDiag.2, fBatch)
+## plotting characters 
+p = (lData.train.sub$sample$fTime)
+pc = c(1, 2, 3, 4)[as.numeric(p)]
+plot.PCA(oDiag.2, fBatch, pch = pc, pch.cex = 1, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.7)
+legend('top', legend = levels(p), pch = 1:4)
+plot.dendogram(oDiag.2, fBatch, labels_cex = 0.85)
 plot.heatmap(oDiag.2)
 
 plot(oDiag.2@lData$PCA$sdev)
@@ -186,28 +260,29 @@ library(lattice)
 df = data.frame(x = oDiag.2@lData$PCA$x[,1], 
                 lData.train.sub$sample)
 
-xyplot(x ~ iTime | fSampleID, data=df, type=(c('g', 'p', 'smooth')))
-xyplot(x ~ iTime | fSampleID, data=df, type=(c('g', 'p', 'l')))
-xyplot(x ~ iTime | fTreatment, groups=fSampleID, data=df, type=(c('g', 'p', 'l')))
+xyplot(x ~ iTime | fSubjectID, data=df, type=(c('g', 'p', 'smooth')))
+xyplot(x ~ iTime | fSubjectID, data=df, type=(c('g', 'p', 'l')))
+xyplot(x ~ iTime | fTreatment, groups=fSubjectID, data=df, type=(c('g', 'p', 'l')))
 xyplot(x ~ iTime | fTreatment, data=df, type=(c('g', 'p', 'r')))
 
 
 ## make ~12 at a time
-# impute the average for missing zeros
-mData = lData.train.sub$data
-mData = apply(mData, 2, function(x){
-  i = which(x == 0)
-  if (length(i) > 0){
-    x[i] = mean(x)
-  }
-  return(x)
-})
+# # impute the average for missing zeros
+# mData = lData.train.sub$data
+# mData = apply(mData, 2, function(x){
+#   i = which(x == 0)
+#   if (length(i) > 0){
+#     x[i] = mean(x)
+#   }
+#   return(x)
+# })
 
 dim(mData)
+plot(density(mData))
 iCut = cut(1:117, breaks = 10, include.lowest = T, labels = 1:10)
 dfCut = data.frame(iCut, x=1:117)
 tapply(dfCut$x, dfCut$iCut, function(x){
-  df = stack(data.frame(log(mData[,x])))
+  df = stack(data.frame(mData[,x]))
   df = cbind(df, lData.train.sub$sample)
   print(xyplot(values ~ iTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
                scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
@@ -216,7 +291,7 @@ tapply(dfCut$x, dfCut$iCut, function(x){
 
 ## add smoothing
 tapply(dfCut$x, dfCut$iCut, function(x){
-  df = stack(data.frame(log(mData[,x])))
+  df = stack(data.frame(mData[,x]))
   df = cbind(df, lData.train.sub$sample)
   print(xyplot(values ~ iTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'smooth')),
                scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
@@ -224,12 +299,13 @@ tapply(dfCut$x, dfCut$iCut, function(x){
 })
 
 
+## revisit this section later to make boxplots adjacent 
 ## time as categorical
 tapply(dfCut$x, dfCut$iCut, function(x){
   df = stack(data.frame(log(mData[,x])))
   df = cbind(df, lData.train.sub$sample)
-  print(xyplot(values ~ fTime | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
-               scales=list(relation='free'), auto.key = list(columns=2), pch=20, cex=0.5)
+  print(bwplot(values ~ fTime:fTreatment | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
+               scales=list(relation='free'), pch=20, cex=0.5)
   )
 })
 
@@ -240,13 +316,13 @@ plot(oDiag.2@lData$PCA$sdev)
 fBatch = lData.train.sub$sample$fTreatment
 plot.PCA(oDiag.2, fBatch)
 mPC = oDiag.2@lData$PCA$x[,1:3]
-
+mPC = scale(mPC)
 ## try a linear mixed effect model to account for varince
 library(lme4)
 dfData = data.frame(mPC)
 dfData = stack(dfData)
 str(dfData)
-dfData$values = as.numeric(scale(dfData$values))
+
 library(lattice)
 densityplot(~ values, data=dfData)
 densityplot(~ values | ind, data=dfData, scales=list(relation='free'))
@@ -254,28 +330,33 @@ densityplot(~ values | ind, data=dfData, scales=list(relation='free'))
 dfSample.2 = lData.train.sub$sample
 str(dfSample.2)
 dfData$fTreatment = dfSample.2$fTreatment
-dfData$fSampleID = dfSample.2$fSampleID
+dfData$fSubjectID = dfSample.2$fSubjectID
 dfData$fTime = dfSample.2$fTime
 dfData$fTrTime = dfSample.2$fTreatment:dfSample.2$fTime
+dfData$fZeros = cut(iZeros, breaks = c(0, 1, 4, max(iZeros)), include.lowest = T)
 
 densityplot(~ values | ind, groups=fTreatment, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
 densityplot(~ values | ind, groups=fTime, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
 densityplot(~ values | ind, groups=fTrTime, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
+densityplot(~ values | ind, groups=fZeros, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
 
 # format data for modelling
 dfData$Coef.1 = factor(dfData$fTreatment:dfData$ind)
 dfData$Coef.2 = factor(dfData$fTime:dfData$ind)
-dfData$Coef.3 = factor(dfData$fSampleID:dfData$ind)
+dfData$Coef.3 = factor(dfData$fSubjectID:dfData$ind)
 dfData$Coef.4 = factor(dfData$fTrTime:dfData$ind)
-
+dfData$Coef.5 = factor(dfData$fZeros:dfData$ind)
 str(dfData)
 
 fit.lme1 = lmer(values ~ 1  + (1 | Coef.1), data=dfData)
 fit.lme2 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.4), data=dfData)
-fit.lme3 = lmer(values ~ 1  + (1 | Coef.4) + (1 | Coef.3), data=dfData)
+fit.lme3 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.4) + (1 | Coef.5), data=dfData)
+fit.lme4 = lmer(values ~ 1  + (1 | Coef.4) + (1 | Coef.5), data=dfData)
+fit.lme5 = lmer(values ~ 1  + (1 | Coef.4) + (1 | Coef.5) + (1 | fSubjectID), data=dfData)
+fit.lme6 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.4) + (1 | Coef.5) + (1 | fSubjectID), data=dfData)
 
-anova(fit.lme1, fit.lme2, fit.lme3)
-
+anova(fit.lme1, fit.lme2, fit.lme3, fit.lme4, fit.lme5)
+summary(fit.lme5)
 ## fit model with stan with various model sizes
 library(rstan)
 rstan_options(auto_write = TRUE)
@@ -285,33 +366,56 @@ library(rethinking)
 stanDso = rstan::stan_model(file='tResponsePartialPooling.stan')
 
 ######## models of various sizes using stan
-## 3 coefficients with one interaction (4)
+## 3 coefficients with one interaction (4) + zeros
 str(dfData)
 m1 = model.matrix(values ~ Coef.1 - 1, data=dfData)
 m2 = model.matrix(values ~ Coef.2 - 1, data=dfData)
 m3 = model.matrix(values ~ Coef.3 - 1, data=dfData)
 m4 = model.matrix(values ~ Coef.4 - 1, data=dfData)
+m5 = model.matrix(values ~ Coef.5 - 1, data=dfData)
 
-m = cbind(m1, m2, m3, m4)
+m = cbind(m1, m2, m3, m4, m5)
 
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=4, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
+                 NscaleBatches=5, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
                                               rep(2, times=nlevels(dfData$Coef.2)),
                                               rep(3, times=nlevels(dfData$Coef.3)),
-                                              rep(4, times=nlevels(dfData$Coef.4))
+                                              rep(4, times=nlevels(dfData$Coef.4)),
+                                              rep(5, times=nlevels(dfData$Coef.5))
                  ),
                  y=dfData$values)
 
-fit.stan.4 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.5 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.4, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
+print(fit.stan.5, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
 
-traceplot(fit.stan.4, 'populationMean')
-traceplot(fit.stan.4, 'sigmaPop')
-traceplot(fit.stan.4, 'sigmaRan')
+traceplot(fit.stan.5, 'populationMean')
+traceplot(fit.stan.5, 'sigmaPop')
+traceplot(fit.stan.5, 'sigmaRan')
 
 ## similar model formulated differently
+m = cbind(m3, m4, m5)
+
+lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
+                 NscaleBatches=3, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.3)),
+                                              rep(2, times=nlevels(dfData$Coef.4)),
+                                              rep(3, times=nlevels(dfData$Coef.5))
+                 ),
+                 y=dfData$values)
+
+fit.stan.5b = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+                                                                            'nu', 'mu', 'log_lik'),
+                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
+print(fit.stan.5b, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
+
+traceplot(fit.stan.5b, 'populationMean')
+traceplot(fit.stan.5b, 'sigmaPop')
+traceplot(fit.stan.5b, 'sigmaRan')
+
+plot(compare(fit.stan.5, fit.stan.5b))
+
+### 2 coefficients without the zeros
 m = cbind(m3, m4)
 
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
@@ -320,29 +424,12 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.4b = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
-                                                                            'nu', 'mu', 'log_lik'),
-                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.4b, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
-
-traceplot(fit.stan.4b, 'populationMean')
-traceplot(fit.stan.4b, 'sigmaPop')
-traceplot(fit.stan.4b, 'sigmaRan')
-
-### 3 coefficients without the interaction
-m = cbind(m1, m2, m3)
-
-lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=3, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
-                                              rep(2, times=nlevels(dfData$Coef.2)),
-                                              rep(3, times=nlevels(dfData$Coef.3))
-                 ),
-                 y=dfData$values)
-
-fit.stan.3 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.2 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.3, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
+print(fit.stan.2, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
+
+plot(compare(fit.stan.5, fit.stan.5b, fit.stan.2))
 
 traceplot(fit.stan.3, 'populationMean')
 traceplot(fit.stan.3, 'sigmaPop')
