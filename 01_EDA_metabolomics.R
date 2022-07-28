@@ -265,6 +265,57 @@ xyplot(x ~ iTime | fSubjectID, data=df, type=(c('g', 'p', 'l')))
 xyplot(x ~ iTime | fTreatment, groups=fSubjectID, data=df, type=(c('g', 'p', 'l')))
 xyplot(x ~ iTime | fTreatment, data=df, type=(c('g', 'p', 'r')))
 
+#### redraw the diagnostic plots after removing variables
+#### with zeros to see effects on PCA
+# how many zeros per metabolite
+z = apply(lData.train.sub$data, 2, function(x) sum(x == 0))
+summary(z)
+z[z > 0]
+hist(z[z > 0])
+z[z > 2]
+
+mData = log(lData.train.sub$data+1)
+mData = mData[, z <= 2]
+dim(mData)
+rownames(mData) = paste0(as.character(lData.train.sub$sample$fSubjectID), ':', 
+                         as.character(lData.train.sub$sample$fTime))
+
+oDiag.3 = CDiagnosticPlots(t(mData), 'zeros dropped')
+l = CDiagnosticPlotsGetParameters(oDiag.3)
+l$PCA.jitter = F
+l$HC.jitter = F
+oDiag.3 = CDiagnosticPlotsSetParameters(oDiag.3, l)
+
+fBatch = cut(iZeros, breaks = c(0, 1, 4, max(iZeros)), include.lowest = T)
+levels(fBatch)
+table(fBatch)
+par(mfrow=c(1,2))
+boxplot.median.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+boxplot.median.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+
+plot.mean.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+plot.mean.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+
+plot.sigma.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
+plot.sigma.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+
+plot.missing.summary(oDiag.2, fBatch)
+plot.missing.summary(oDiag.3, fBatch)
+
+## plotting characters 
+p = (lData.train.sub$sample$fTime)
+pc = c(1, 2, 3, 4)[as.numeric(p)]
+plot.PCA(oDiag.2, fBatch, pch = pc, pch.cex = 1, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.7)
+legend('top', legend = levels(p), pch = 1:4)
+plot.PCA(oDiag.3, fBatch, pch = pc, pch.cex = 1, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.7)
+legend('bottomleft', legend = levels(p), pch = 1:4)
+
+plot.dendogram(oDiag.2, fBatch, labels_cex = 0.85)
+plot.dendogram(oDiag.3, fBatch, labels_cex = 0.85)
+
+plot.heatmap(oDiag.3)
+
+plot(oDiag.3@lData$PCA$sdev)
 
 ## make ~12 at a time
 # # impute the average for missing zeros
@@ -277,6 +328,7 @@ xyplot(x ~ iTime | fTreatment, data=df, type=(c('g', 'p', 'r')))
 #   return(x)
 # })
 
+mData = log(lData.train.sub$data+1)
 dim(mData)
 plot(density(mData))
 iCut = cut(1:117, breaks = 10, include.lowest = T, labels = 1:10)
@@ -314,8 +366,8 @@ tapply(dfCut$x, dfCut$iCut, function(x){
 par(mfrow=c(1,1))
 plot(oDiag.2@lData$PCA$sdev)
 fBatch = lData.train.sub$sample$fTreatment
-plot.PCA(oDiag.2, fBatch)
-mPC = oDiag.2@lData$PCA$x[,1:3]
+plot.PCA(oDiag.2, fBatch, labels.cex = 0.3)
+mPC = oDiag.2@lData$PCA$x[,1:2]
 mPC = scale(mPC)
 ## try a linear mixed effect model to account for varince
 library(lme4)
@@ -385,7 +437,7 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.5 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.5 = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
 print(fit.stan.5, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
@@ -404,7 +456,7 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.5b = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.5b = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                             'nu', 'mu', 'log_lik'),
                        cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
 print(fit.stan.5b, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
@@ -424,7 +476,7 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.2 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.2 = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
 print(fit.stan.2, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
@@ -443,19 +495,19 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.1 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.1 = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.1, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
+print(fit.stan.1, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
 
 traceplot(fit.stan.1, 'populationMean')
 traceplot(fit.stan.1, 'sigmaPop')
 traceplot(fit.stan.1, 'sigmaRan')
 
 ## some model scores and comparisons
-compare(fit.stan.4, fit.stan.4b, fit.stan.3, fit.stan.1)
-We#compare(fit.stan.3, fit.stan.2, func = LOO)
-plot(compare(fit.stan.4, fit.stan.4b, fit.stan.3, fit.stan.1))
+compare(fit.stan.5, fit.stan.5b, fit.stan.2, fit.stan.1)
+#compare(fit.stan.3, fit.stan.2, func = LOO)
+plot(compare(fit.stan.5, fit.stan.5b, fit.stan.2, fit.stan.1))
 
 ############### new simulated data
 ###############
@@ -471,7 +523,7 @@ simulateOne = function(mu, sigma, nu){
 
 ## sample n values, 300 times
 mDraws.sim = matrix(NA, nrow = nrow(dfData), ncol=300)
-l = extract(fit.stan.4b)
+l = extract(fit.stan.5b)
 for (i in 1:300){
   p = sample(1:nrow(l$mu), 1)
   mDraws.sim[,i] = simulateOne(l$mu[p,], 
@@ -500,7 +552,7 @@ points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$in
 
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
      col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and model 3',
-     xlab='PC1', ylab='PC2', xlim=c(-5, 3), ylim=c(-2, 2))
+     xlab='PC1', ylab='PC2', xlim=c(-5, 3), ylim=c(-3, 3))
 
 apply(mDraws.sim, 2, function(x) {
   points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'],
