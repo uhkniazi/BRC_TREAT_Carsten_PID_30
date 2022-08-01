@@ -289,15 +289,15 @@ oDiag.3 = CDiagnosticPlotsSetParameters(oDiag.3, l)
 fBatch = cut(iZeros, breaks = c(0, 1, 4, max(iZeros)), include.lowest = T)
 levels(fBatch)
 table(fBatch)
-par(mfrow=c(1,2))
-boxplot.median.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-boxplot.median.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+p.old = par(mfrow=c(1,2))
+boxplot.median.summary(oDiag.2, fBatch, axis.label.cex = 0.4)
+boxplot.median.summary(oDiag.3, fBatch, axis.label.cex = 0.4)
 
-plot.mean.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-plot.mean.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+plot.mean.summary(oDiag.2, fBatch, axis.label.cex = 0.4)
+plot.mean.summary(oDiag.3, fBatch, axis.label.cex = 0.4)
 
-plot.sigma.summary(oDiag.2, fBatch, axis.label.cex = 0.5)
-plot.sigma.summary(oDiag.3, fBatch, axis.label.cex = 0.5)
+plot.sigma.summary(oDiag.2, fBatch, axis.label.cex = 0.4)
+plot.sigma.summary(oDiag.3, fBatch, axis.label.cex = 0.4)
 
 plot.missing.summary(oDiag.2, fBatch)
 plot.missing.summary(oDiag.3, fBatch)
@@ -305,13 +305,13 @@ plot.missing.summary(oDiag.3, fBatch)
 ## plotting characters 
 p = (lData.train.sub$sample$fTime)
 pc = c(1, 2, 3, 4)[as.numeric(p)]
-plot.PCA(oDiag.2, fBatch, pch = pc, pch.cex = 1, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.7)
+plot.PCA(oDiag.2, fBatch, pch = pc, pch.cex = 0.8, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.5)
 legend('top', legend = levels(p), pch = 1:4)
-plot.PCA(oDiag.3, fBatch, pch = pc, pch.cex = 1, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.7)
+plot.PCA(oDiag.3, fBatch, pch = pc, pch.cex = 0.8, legend.pos = 'topleft', csLabels = lData.train.sub$sample$fSubjectID, labels.cex = 0.5)
 legend('bottomleft', legend = levels(p), pch = 1:4)
 
-plot.dendogram(oDiag.2, fBatch, labels_cex = 0.85)
-plot.dendogram(oDiag.3, fBatch, labels_cex = 0.85)
+plot.dendogram(oDiag.2, fBatch, labels_cex = 0.7)
+plot.dendogram(oDiag.3, fBatch, labels_cex = 0.7)
 
 plot.heatmap(oDiag.3)
 
@@ -350,17 +350,17 @@ tapply(dfCut$x, dfCut$iCut, function(x){
   )
 })
 
-
-## revisit this section later to make boxplots adjacent 
-## time as categorical
+## box plots
+iCut = cut(1:117, breaks = 60, include.lowest = T, labels = 1:60)
+dfCut = data.frame(iCut, x=1:117)
 tapply(dfCut$x, dfCut$iCut, function(x){
-  df = stack(data.frame(log(mData[,x])))
+  df = stack(data.frame(mData[,x]))
   df = cbind(df, lData.train.sub$sample)
-  print(bwplot(values ~ fTime:fTreatment | ind, groups=fTreatment, data=df, type=(c('g', 'p', 'r')),
-               scales=list(relation='free'), pch=20, cex=0.5)
+  print(dotplot(values ~ fTime | fTreatment*ind, data=df, groups=df$ind,
+                panel=function(x, y, ...) panel.bwplot(x, y, pch='|',...), type='b',
+                par.strip.text=list(cex=0.7), scales=list(relation='free', x=list(cex=0.5), y=list(cex=0.7)))
   )
 })
-
 
 ################ model checks and simulations for PCA
 par(mfrow=c(1,1))
@@ -437,7 +437,7 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.5 = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.5 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
 print(fit.stan.5, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
@@ -476,7 +476,7 @@ lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
                  ),
                  y=dfData$values)
 
-fit.stan.2 = sampling(stanDso, data=lStanData, iter=2000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.2 = sampling(stanDso, data=lStanData, iter=5000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
 print(fit.stan.2, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu'), digits=3)
@@ -523,7 +523,7 @@ simulateOne = function(mu, sigma, nu){
 
 ## sample n values, 300 times
 mDraws.sim = matrix(NA, nrow = nrow(dfData), ncol=300)
-l = extract(fit.stan.5b)
+l = extract(fit.stan.2)
 for (i in 1:300){
   p = sample(1:nrow(l$mu), 1)
   mDraws.sim[,i] = simulateOne(l$mu[p,], 
@@ -561,12 +561,14 @@ apply(mDraws.sim, 2, function(x) {
 
 
 # ##########################################
-m = cbind(extract(fit.stan.4)$sigmaRan, extract(fit.stan.4)$sigmaPop) 
+m = cbind(extract(fit.stan.5)$sigmaRan, extract(fit.stan.5)$sigmaPop) 
 dim(m)
-m = log(m[,-5])
-colnames(m) = c('Treatment', 'Time', 'Subject', 'Tr:Time')#, 'Residual')
+m = log(m[,-6])
+colnames(m) = c('Treatment', 'Time', 'SubjectID', 'Tr:Time', 'Zeros')
 pairs(m, pch=20, cex=0.5, col='grey')
 
+dim(m)
+m = m[,-5]
 df = stack(data.frame(m))
 histogram(~ values | ind, data=df, xlab='Log SD', scales=list(relation='free'))
 
@@ -583,24 +585,24 @@ histogram(~ values | ind, data=df, xlab='Log SD', scales=list(relation='free'))
 ######################### correlations of metabolites
 mData = lData.train.sub$data
 
-## impute the missing data
-mData = apply(mData, 2, function(x){
-  i = which(x == 0)
-  if (length(i) > 0){
-    x[i] = mean(x)
-  }
-  return(x)
-})
+# ## impute the missing data
+# mData = apply(mData, 2, function(x){
+#   i = which(x == 0)
+#   if (length(i) > 0){
+#     x[i] = mean(x)
+#   }
+#   return(x)
+# })
 
-mCor = cor(log(mData))
+mCor = cor(log(mData+1))
 image(mCor)
-aheatmap(mCor, scale = 'none', cexRow = 20, fontsize = 5)
+aheatmap(mCor, scale = 'none', cexRow = 20, fontsize = 6)
 aheatmap(abs(mCor), scale = 'none', cexRow = 20, fontsize = 5)
 
 hc = hclust(dist(abs(mCor)))
-plot(hc, main='HC of Dist Mat for abs(Cor)', sub='', cex=0.7)
+plot(hc, main='HC of Dist Mat for abs(Cor)', sub='', cex=0.4)
 aheatmap(abs(mCor), scale = 'none', Rowv = hc, 
-         Colv = hc, cexRow = 20, fontsize = 5,
+         Colv = hc, cexRow = 20, fontsize = 6,
          col=c('white', brewer.pal(5, 'YlOrRd')), breaks=0.5)
 c = cutree(hc, k = 4)
 table(c)
@@ -610,10 +612,16 @@ fBatch = factor(c)
 l = CDiagnosticPlotsGetParameters(oDiag.3)
 l = lapply(l, function(x) return(F))
 oDiag.3 = CDiagnosticPlotsSetParameters(oDiag.3, l)
-plot.PCA(oDiag.3, fBatch, legend.pos = 'bottomright')
+plot.PCA(oDiag.3, fBatch, legend.pos = 'bottomright', labels.cex = 0.5)
 plot(oDiag.3@lData$PCA$sdev)
 m = oDiag.3@lData$PCA$x[,1:3]
 pairs(m, col=rainbow(4)[as.numeric(factor(c))], pch=20)
+
+oDiag.4 = CDiagnosticPlots(log(mData+1), 'metabolites')
+l = CDiagnosticPlotsGetParameters(oDiag.4)
+l = lapply(l, function(x) return(F))
+oDiag.4 = CDiagnosticPlotsSetParameters(oDiag.4, l)
+plot.PCA(oDiag.4, fBatch, csLabels = '')
 # 
 # m = scale(t(scale(log((lData.train.sub$data+1)))))
 # colnames(m) = as.character(lData.train.sub$sample$fTreatment)
